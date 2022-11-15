@@ -1,0 +1,10 @@
+# install these using 'python -m pip install -r requirements.txt' 
+
+discord.py
+python-dotenv
+discord-py-slash-command
+requests
+logging
+paypalrestsdk
+asyncio
+httpx
