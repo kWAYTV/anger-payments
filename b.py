@@ -399,7 +399,7 @@ async def crypto(interaction: discord.Interaction, service: str, price: float, q
     async def checkCrypto():
         try:
             status = await check_crypto_status(txid, crypto)
-            url = f"https://api.blockcypher.com/v1/btc/main/txs/{txid}"
+            url = f"https://api.blockcypher.com/v1/{crypto}/main/txs/{txid}"
             view=Buttons()
             view.add_item(discord.ui.Button(label="Check progress",style=discord.ButtonStyle.link,url=url,emoji="🕒"))
             if status < 3:
