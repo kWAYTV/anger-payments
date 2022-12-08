@@ -1,9 +1,9 @@
 # Imports
-import discord, os, time, requests, json, dotenv, logging, paypalrestsdk, asyncio, httpx
+import discord, os, time, requests, json, dotenv, logging, paypalrestsdk, asyncio, httpx, pymysql
 from discord.ext.commands import CommandNotFound
 from discord.ext import commands, tasks
 from discord.ui import Select, View, Button
-from discord import app_commands
+from discord import app_commands, SelectOption
 from itertools import cycle
 from colorama import Fore, init, Style
 from dotenv import load_dotenv
@@ -54,6 +54,10 @@ else:
     PAYPAL_CLIENT_ID = os.getenv("PAYPAL_CLIENT_ID_LIVE")
     PAYPAL_CLIENT_SECRET = os.getenv("PAYPAL_CLIENT_SECRET_LIVE")
     PAYPAL_PAY = f"https://www.paypal.com/invoice/payerView/details/"
+db_host = os.getenv("DB_HOST")
+db_user = os.getenv("DB_USER")
+db_pass = os.getenv("DB_PASS")
+db_name = os.getenv("DB_NAME")
 
 # Set up rest sdk
 paypalrestsdk.configure({
@@ -63,6 +67,155 @@ paypalrestsdk.configure({
 
 # Define the bot client
 bot = commands.Bot(command_prefix=bot_prefix, help_command=None, case_insensitive=True, intents=discord.Intents.all())
+connection = pymysql.connect(host=db_host, user=db_user, password=db_pass, db=db_name)
+
+# Function to create table if it doesn't exist
+async def create_table():
+    print(f"{Fore.GREEN}>{Fore.WHITE} Database connected")
+    try:
+        # Create cursor
+        with connection.cursor() as cursor:
+            cursor.execute("CREATE TABLE IF NOT EXISTS products (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255) NOT NULL, price DECIMAL(10,2) NOT NULL, description VARCHAR(255), server_ids VARCHAR(255) NOT NULL)")
+
+        # Save changes
+        connection.commit()
+
+    except pymysql.err.ProgrammingError:
+        # If table already exists, print it
+        print(f"{Fore.RED}>{Fore.WHITE} Database already exists")
+
+    except Exception as e:
+        # If something goes wrong, print error message
+        print(f"{Fore.RED}>{Fore.WHITE} Error creating database: {e}")
+        connection.rollback()
+
+    else:
+        # If nothing goes wrong, print success message
+        print(f"{Fore.GREEN}>{Fore.WHITE} Table created successfully")
+
+# Function to add a product to the database
+async def add_product(name, price, description):
+    print(f"{Fore.GREEN}>{Fore.WHITE} Database connected")
+    print(f"{Fore.YELLOW}>{Fore.WHITE} Trying to add product {name} with price {price} and description {description}")
+    try:
+        with connection.cursor() as cursor:
+            sql = "INSERT INTO products (name, price, description) VALUES (%s, %s, %s)"
+            cursor.execute(sql, (name, price, description))
+            connection.commit()
+            print(f"{Fore.GREEN}>{Fore.WHITE} Product {name} added successfully")
+
+    except Exception as e:
+        # If any error occurs, rollback the changes
+        print(f"{Fore.RED}>{Fore.WHITE} Error adding product: {e}")
+        connection.rollback()
+
+# Function to delete a product from the database
+async def delete_product(name):
+    print(f"{Fore.GREEN}>{Fore.WHITE} Database connected")
+    print(f"{Fore.YELLOW}>{Fore.WHITE} Trying to delete product {name}")
+    try:
+        with connection.cursor() as cursor:
+            sql = "DELETE FROM products WHERE name = %s"
+            cursor.execute(sql, (name))
+            connection.commit()
+            print(f"{Fore.GREEN}>{Fore.WHITE} Product {name} deleted successfully")
+
+    except Exception as e:
+        # If any error occurs, rollback the changes
+        print(f"{Fore.RED}>{Fore.WHITE} Error deleting product: {e}")
+        connection.rollback()
+
+# Function to change product price
+async def change_price(name, price):
+    print(f"{Fore.GREEN}>{Fore.WHITE} Database connected")
+    print(f"{Fore.YELLOW}>{Fore.WHITE} Trying to edit product {name}")
+
+    try:
+        with connection.cursor() as cursor:
+            sql = "UPDATE products SET price = %s WHERE name = %s"
+            cursor.execute(sql, (price, name))
+            connection.commit()
+            print(f"{Fore.GREEN}>{Fore.WHITE} Product {name} price edited successfully")
+
+    except Exception as e:
+        # If any error occurs, rollback the changes
+        print(f"{Fore.RED}>{Fore.WHITE} Error editing product: {e}")
+        connection.rollback()
+
+# Function to change product name
+async def change_name(name, new_name):
+    print(f"{Fore.GREEN}>{Fore.WHITE} Database connected")
+    print(f"{Fore.YELLOW}>{Fore.WHITE} Trying to edit product {name}")
+
+    try:
+        with connection.cursor() as cursor:
+            sql = "UPDATE products SET name = %s WHERE name = %s"
+            cursor.execute(sql, (new_name, name))
+            connection.commit()
+            print(f"{Fore.GREEN}>{Fore.WHITE} Product {name} name edited successfully")
+
+
+    except Exception as e:
+        # If any error occurs, rollback the changes
+        print(f"{Fore.RED}>{Fore.WHITE} Error editing product: {e}")
+        connection.rollback()
+
+# Function to change product description
+async def change_description(name, description):
+    print(f"{Fore.GREEN}>{Fore.WHITE} Database connected")
+    print(f"{Fore.YELLOW}>{Fore.WHITE} Trying to edit product {name}")
+
+    try:
+        with connection.cursor() as cursor:
+            sql = "UPDATE products SET description = %s WHERE name = %s"
+            cursor.execute(sql, (description, name))
+            connection.commit()
+            print(f"{Fore.GREEN}>{Fore.WHITE} Product {name} description edited successfully")
+
+    except Exception as e:
+        # If any error occurs, rollback the changes
+        print(f"{Fore.RED}>{Fore.WHITE} Error editing product: {e}")
+        connection.rollback()
+
+# Function to get all products from the database
+async def get_all_products():
+    print(f"{Fore.GREEN}>{Fore.WHITE} Database connected")
+    try:
+        with connection.cursor() as cursor:
+            sql = "SELECT * FROM products"
+            cursor.execute(sql)
+            result = cursor.fetchall()
+            print(f"{Fore.GREEN}>{Fore.WHITE} Products fetched successfully")
+            return result
+    
+    except pymysql.err.ProgrammingError:
+        print(f"{Fore.RED}>{Fore.WHITE} No products in the database")
+        return f"No products in the database"
+
+    except Exception as e:
+        # If any error occurs, rollback the changes
+        print(f"{Fore.RED}>{Fore.WHITE} Error fetching products: {e}")
+        connection.rollback()
+
+# Function to get a product from the database
+async def get_product(name):
+    print(f"{Fore.GREEN}>{Fore.WHITE} Database connected")
+    try:
+        with connection.cursor() as cursor:
+            sql = "SELECT * FROM products WHERE name = %s"
+            cursor.execute(sql, (name))
+            result = cursor.fetchone()
+            print(f"{Fore.GREEN}>{Fore.WHITE} Product {name} fetched successfully")
+            return result
+
+    except pymysql.err.ProgrammingError:
+        print(f"{Fore.RED}>{Fore.WHITE} Product {name} not found")
+        return f"Product {name} not found"
+
+    except Exception as e:
+        # If any error occurs, rollback the changes
+        print(f"{Fore.RED}>{Fore.WHITE} Error fetching product: {e}")
+        connection.rollback()
 
 # Dynamic activity
 status = cycle(["payments", "discord.gg/kws", "your wallet", "kwayservices.top", "paypal",  "crypto"])
@@ -164,6 +317,7 @@ async def on_ready():
     clear()
     printLogo()
     print(f"{Fore.MAGENTA}[{Fore.RESET}!{Fore.MAGENTA}] {Fore.RESET}Logged in as {bot.user.name}#{bot.user.discriminator}.")
+    await create_table()
     logging.basicConfig(handlers=[logging.FileHandler('anger.log', 'a+', 'utf-8')], level=logging.INFO, format='%(asctime)s: %(message)s')
 
     global PAYPAL_TOKEN
@@ -222,7 +376,33 @@ async def sync(ctx):
 async def ping(interaction: discord.Interaction, member: discord.Member):
     latency = round(bot.latency *  1000)
     await log("Ping", f"{member.mention} pinged the bot.", "cyan")
-    await interaction.response.send_message(f"Hey! {member.mention}! My latency is {latency}ms!")
+    await interaction.response.send_message(f"Hey! {member.mention}! My latency is `{latency}` ms!")
+
+class SelectView(View):
+    def __init__(self, *, timeout=180):
+        super().__init__(timeout=timeout)
+
+# Panel Command
+@bot.tree.command(name="panel", description="Send the panel")
+async def panel(interaction: discord.Interaction):
+
+    products = await get_all_products()
+
+    select = Select(placeholder="Select a product", options=[
+        SelectOption(label=product[1], value=product[1]) for product in products
+    ])
+    
+    async def callback(interaction):
+        select.disabled = True
+        for product in products:
+            if select.values[0] == product[1]:
+                result = await get_product(product[1])
+                await interaction.response.send_message(f"✨ID: `{result[0]}`\n📇Name: `{result[1]}`\n💸Price: `{result[2]}`\n💬Description: `{result[3]}`", ephemeral=True)
+
+    select.callback = callback
+    view = SelectView()
+    view.add_item(select)
+    await interaction.response.send_message(view=view, ephemeral=True)
 
 # Create PayPal invoice command
 @bot.tree.command(name="paypal", description="Create a PayPal invoice")
@@ -395,7 +575,7 @@ async def crypto(interaction: discord.Interaction, service: str, price: float, q
         await interaction.followup.send(f"Hey! {interaction.user.mention}! You took too long to send the transaction ID.")
         return
     
-    @tasks.loop(seconds=10)
+    @tasks.loop(seconds=60)
     async def checkCrypto():
         try:
             status = await check_crypto_status(txid, crypto)
@@ -444,5 +624,78 @@ async def crypto(interaction: discord.Interaction, service: str, price: float, q
         
     checkCrypto.start()
 
+# Add shop product command 
+@bot.tree.command(name="add_product", description="Add a product to the shop database")
+@app_commands.checks.has_permissions(administrator=True)
+async def add_product_command(interaction: discord.Interaction, name: str, price: float, description: str):
+    await interaction.response.defer()
+    await add_product(name, price, description)
+    await interaction.followup.send(f"Added product `{name}` to the database with a price of `{price}` and description `{description}`")
+
+# Remove shop product command
+@bot.tree.command(name="delete_product", description="Delete a product from the shop database")
+@app_commands.checks.has_permissions(administrator=True)
+async def remove_product_command(interaction: discord.Interaction, name: str):
+    await interaction.response.defer()
+    await delete_product(name)
+    await interaction.followup.send(f"Deleted product `{name}` from the database")
+
+# Change product price command
+@bot.tree.command(name="change_price", description="Change the price of a product in the shop database")
+@app_commands.checks.has_permissions(administrator=True)
+async def change_price_command(interaction: discord.Interaction, name: str, price: float):
+    await interaction.response.defer()
+    await change_price(name, price)
+    await interaction.followup.send(f"Changed the price of product `{name}` to `{price}`")
+
+# Change product description command
+@bot.tree.command(name="change_description", description="Change the description of a product in the shop database")
+@app_commands.checks.has_permissions(administrator=True)
+async def change_description_command(interaction: discord.Interaction, name: str, description: str):
+    await interaction.response.defer()
+    await change_description(name, description)
+    await interaction.followup.send(f"Changed the description of product `{name}` to `{description}`")
+
+# Change product name command
+@bot.tree.command(name="change_name", description="Change the name of a product in the shop database")
+@app_commands.checks.has_permissions(administrator=True)
+async def change_name_command(interaction: discord.Interaction, name: str, new_name: str):
+    await interaction.response.defer()
+    await change_name(name, new_name)
+    await interaction.followup.send(f"Changed the name of product `{name}` to `{new_name}`")
+
+# Show all products command
+@bot.tree.command(name="shop", description="Show all products in the shop database")
+@app_commands.checks.has_permissions(administrator=True)
+async def show_products_command(interaction: discord.Interaction):
+    await interaction.response.defer()
+    result = await get_all_products()
+    if result == f"No products in the database":
+        await interaction.followup.send(result)
+        return
+    embed = discord.Embed(title="Products", description=f"🌐 All products in the database", color=0x000000)
+    for product in result:
+        embed.add_field(name=f"✨ID: `{product[0]}`", value=f"📇Name: `{product[1]}`\n💸Price: `{product[2]}`\n💬Description: `{product[3]}`", inline=False)
+    await interaction.followup.send(embed=embed)
+
+# Get info about a product command
+@bot.tree.command(name="info", description="Get info about a product in the shop database")
+@app_commands.checks.has_permissions(administrator=True)
+async def info_command(interaction: discord.Interaction, product: str):
+    await interaction.response.defer()
+    result = await get_product(product)
+    if result == f"Product {product} not found":
+        await interaction.followup.send(result)
+        return
+    embed = discord.Embed(title="Product Info", description=f"Info about product `{product}`", color=0x000000)
+    embed.add_field(name="Name", value=f"`{result[1]}`")
+    embed.add_field(name="Price", value=f"`{result[2]}`")
+    embed.add_field(name="Description", value=f"`{result[3]}`")
+    await interaction.followup.send(embed=embed)
+
+# Run the bot
 if __name__ == "__main__":
     bot.run(os.getenv("DISCORD_TOKEN"))
+    # Close the database connection
+    connection.close()
+    print(f"{Fore.MAGENTA}>{Fore.WHITE} Closed connection.")
