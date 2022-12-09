@@ -75,7 +75,7 @@ async def create_table():
     try:
         # Create cursor
         with connection.cursor() as cursor:
-            cursor.execute("CREATE TABLE IF NOT EXISTS products (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255) NOT NULL, price DECIMAL(10,2) NOT NULL, description VARCHAR(255), server_ids VARCHAR(255) NOT NULL)")
+            cursor.execute("CREATE TABLE IF NOT EXISTS products (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255) NOT NULL, price DECIMAL(10,2) NOT NULL, description VARCHAR(255), server_id BIGINT NOT NULL)")
 
         # Save changes
         connection.commit()
@@ -94,13 +94,13 @@ async def create_table():
         print(f"{Fore.GREEN}>{Fore.WHITE} Table created successfully")
 
 # Function to add a product to the database
-async def add_product(name, price, description):
+async def add_product(name, price, description, server_id):
     print(f"{Fore.GREEN}>{Fore.WHITE} Database connected")
     print(f"{Fore.YELLOW}>{Fore.WHITE} Trying to add product {name} with price {price} and description {description}")
     try:
         with connection.cursor() as cursor:
-            sql = "INSERT INTO products (name, price, description) VALUES (%s, %s, %s)"
-            cursor.execute(sql, (name, price, description))
+            sql = "INSERT INTO products (name, price, description, server_id) VALUES (%s, %s, %s, %s)"
+            cursor.execute(sql, (name, price, description, server_id))
             connection.commit()
             print(f"{Fore.GREEN}>{Fore.WHITE} Product {name} added successfully")
 
@@ -171,6 +171,23 @@ async def change_description(name, description):
             cursor.execute(sql, (description, name))
             connection.commit()
             print(f"{Fore.GREEN}>{Fore.WHITE} Product {name} description edited successfully")
+
+    except Exception as e:
+        # If any error occurs, rollback the changes
+        print(f"{Fore.RED}>{Fore.WHITE} Error editing product: {e}")
+        connection.rollback()
+
+# Function to change product server_id
+async def change_server_id(name, server_id):
+    print(f"{Fore.GREEN}>{Fore.WHITE} Database connected")
+    print(f"{Fore.YELLOW}>{Fore.WHITE} Trying to edit product {name}")
+
+    try:
+        with connection.cursor() as cursor:
+            sql = "UPDATE products SET server_id = %s WHERE name = %s"
+            cursor.execute(sql, (server_id, name))
+            connection.commit()
+            print(f"{Fore.GREEN}>{Fore.WHITE} Product {name} server_id edited successfully")
 
     except Exception as e:
         # If any error occurs, rollback the changes
@@ -328,6 +345,7 @@ async def on_ready():
         print(f"{Fore.RED}[{Fore.RESET}ERROR{Fore.RED}] {Fore.RESET}Failed to get {Fore.CYAN}PayPal{Fore.RESET} token, error: {str(e)}")
 
     changeStatus.start()
+    bot.add_view(SelectView())
 
 # Log function
 async def log(title: str, description: str, color: str):
@@ -379,30 +397,46 @@ async def ping(interaction: discord.Interaction, member: discord.Member):
     await interaction.response.send_message(f"Hey! {member.mention}! My latency is `{latency}` ms!")
 
 class SelectView(View):
-    def __init__(self, *, timeout=180):
-        super().__init__(timeout=timeout)
+    def __init__(self):
+        super().__init__(timeout=None)
 
 # Panel Command
 @bot.tree.command(name="panel", description="Send the panel")
 async def panel(interaction: discord.Interaction):
 
     products = await get_all_products()
+    print(interaction.guild.id)
+    filtered_products = [product for product in products if product[4] == interaction.guild.id]
 
-    select = Select(placeholder="Select a product", options=[
-        SelectOption(label=product[1], value=product[1]) for product in products
-    ])
+    select = Select(
+        placeholder="Select a product", 
+        custom_id="panel-select", 
+        options= [
+            SelectOption(label=product[1], value=product[1]) for product in filtered_products
+            ] + [
+                SelectOption(label="Cancel", value="cancel", emoji="❌")
+                ])
     
     async def callback(interaction):
         select.disabled = True
-        for product in products:
-            if select.values[0] == product[1]:
-                result = await get_product(product[1])
-                await interaction.response.send_message(f"✨ID: `{result[0]}`\n📇Name: `{result[1]}`\n💸Price: `{result[2]}`\n💬Description: `{result[3]}`", ephemeral=True)
+        if select.values[0] == "cancel":
+            await interaction.response.send_message("Cancelled!", ephemeral=True)
+            return
+        else:
+            for product in products:
+                if select.values[0] == product[1]:
+                    result = await get_product(product[1])
+                    iId = result[0]
+                    iName = result[1]
+                    iPrice = result[2]
+                    iDesc = result[3]
+                    iSv = result[4]
+                    await interaction.response.send_message(f"✨ID: `{iId}`\n📇Name: `{iName}`\n💸Price: `{iPrice}`\n💬Description: `{iDesc}`\n🌐Server ID: `{iSv}`", ephemeral=True)
 
     select.callback = callback
     view = SelectView()
     view.add_item(select)
-    await interaction.response.send_message(view=view, ephemeral=True)
+    await interaction.response.send_message(view=view)
 
 # Create PayPal invoice command
 @bot.tree.command(name="paypal", description="Create a PayPal invoice")
@@ -627,9 +661,10 @@ async def crypto(interaction: discord.Interaction, service: str, price: float, q
 # Add shop product command 
 @bot.tree.command(name="add_product", description="Add a product to the shop database")
 @app_commands.checks.has_permissions(administrator=True)
-async def add_product_command(interaction: discord.Interaction, name: str, price: float, description: str):
+async def add_product_command(interaction: discord.Interaction, name: str, price: float, description: str, server_id: str):
     await interaction.response.defer()
-    await add_product(name, price, description)
+    server_id = int(server_id)
+    await add_product(name, price, description, server_id)
     await interaction.followup.send(f"Added product `{name}` to the database with a price of `{price}` and description `{description}`")
 
 # Remove shop product command
@@ -664,6 +699,14 @@ async def change_name_command(interaction: discord.Interaction, name: str, new_n
     await change_name(name, new_name)
     await interaction.followup.send(f"Changed the name of product `{name}` to `{new_name}`")
 
+# Change product server id command  
+@bot.tree.command(name="change_server_id", description="Change the server id of a product in the shop database")
+@app_commands.checks.has_permissions(administrator=True)
+async def change_server_id_command(interaction: discord.Interaction, name: str, server_id: int):
+    await interaction.response.defer()
+    await change_server_id(name, server_id)
+    await interaction.followup.send(f"Changed the server id of product `{name}` to `{server_id}`")
+
 # Show all products command
 @bot.tree.command(name="shop", description="Show all products in the shop database")
 @app_commands.checks.has_permissions(administrator=True)
@@ -675,7 +718,7 @@ async def show_products_command(interaction: discord.Interaction):
         return
     embed = discord.Embed(title="Products", description=f"🌐 All products in the database", color=0x000000)
     for product in result:
-        embed.add_field(name=f"✨ID: `{product[0]}`", value=f"📇Name: `{product[1]}`\n💸Price: `{product[2]}`\n💬Description: `{product[3]}`", inline=False)
+        embed.add_field(name=f"✨ID: `{product[0]}`", value=f"📇Name: `{product[1]}`\n💸Price: `{product[2]}`\n💬Description: `{product[3]}`\n🌐Server ID: `{product[4]}`", inline=True)
     await interaction.followup.send(embed=embed)
 
 # Get info about a product command
@@ -691,6 +734,7 @@ async def info_command(interaction: discord.Interaction, product: str):
     embed.add_field(name="Name", value=f"`{result[1]}`")
     embed.add_field(name="Price", value=f"`{result[2]}`")
     embed.add_field(name="Description", value=f"`{result[3]}`")
+    embed.add_field(name="Server ID", value=f"`{result[4]}`")
     await interaction.followup.send(embed=embed)
 
 # Run the bot
